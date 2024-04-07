@@ -3,22 +3,28 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def show_chart(x, y, xlabel, ylabel, title, x2=None, y2=None):
+def show_charts(x, stock_values, y, xlabel, ylabel, title, y2, stocks):
+    figure, axis = plt.subplots(2, 1)
+    axis[0].plot(x, stock_values)
+    axis[1].plot(x, y)
+    for i in range(2):
 
-    plt.plot(x, y)
-    if x2 is not None and y2 is not None:
-        plt.plot(x2, y2, "r")
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.xticks(rotation=30)
-    plt.xticks(np.arange(0, len(x), step=len(x) // 6))
+        axis[i].set_xlabel(xlabel[i])
+        axis[i].set_ylabel(ylabel[i])
+        axis[i].set_title(title[i])
+        axis[i].tick_params(axis='x', rotation=30)
+        axis[i].set_xticks(np.arange(0, len(x), step=len(x) // 6))
+        axis[i].set_xticklabels(x[np.arange(0, len(x), step=len(x) // 6)], rotation=30)
+
+    axis[1].plot(x, y2, "r")
+    for x, y, buy, index in stocks:
+        if buy is True:
+            axis[1].scatter(x, y, color='green')
+        else:
+            axis[1].scatter(x, y, color='red')
+
     plt.tight_layout()
     plt.show()
-
-
-def show_stock_chart(x, y, xlabel, ylabel, title):
-    show_chart(x, y, xlabel, ylabel, title)
 
 
 def count_ema(i, N, alpha, stock_values):
@@ -34,11 +40,45 @@ def count_ema(i, N, alpha, stock_values):
 
     return counter, denominator
 
-def create_macd_signal_plot(stock_values, dates):
+
+def simulate_buying_stocks(stocks_values, stocks):
+    print(stocks_values[0])
+    account_balance = stocks_values[0] * 1000
+    start_balance = account_balance
+    bid = account_balance / 10
+    shares = 0.0
+    print(f"Początkowy stan konta wynosi {account_balance}zł, a cena za akcje wynosi {stocks_values[0]}")
+
+    for date, signal, buy, index in stocks:
+
+        if buy is True:
+            if account_balance >= bid:
+                shares += bid / stocks_values[index]
+                account_balance -= bid
+                print(f"Kupuję akcje za {bid}zł. Stan konta wynosi: {account_balance}zł. Ilość posiadanych akcji wynosi {shares}.")
+            elif account_balance > 0:
+                price = account_balance
+                shares += price / stocks_values[index]
+                account_balance = 0
+                print(f"Kupuję akcje za {price}zł. Stan konta wynosi: {account_balance}zł. Ilość posiadanych akcji wynosi {shares}.")
+        else:
+            sell = shares / 2
+            shares /= 2
+            account_balance += sell * stocks_values[index]
+            print(f"Sprzedaje akcje za {sell * stocks_values[index]}. Stan konta wynosi: {account_balance}zł. Ilość posiadanych akcji wynosi {shares}.")
+
+    sell = shares
+    shares = 0
+    account_balance += sell * stocks_values.tail(1).values[0]
+    print(f"Sprzedaje wszystkie akcje za {sell * stocks_values.tail(1).values[0]}. Stan konta wynosi: {account_balance}zł. Ilość posiadanych akcji wynosi {shares}.")
+    print(f"Roznica pieniedzy przed i po inwestowaniu wynosi {account_balance - start_balance}")
+
+
+
+def create_macd_signal_plot(stock_values, dates, name):
     macd = []
 
     for i in range(len(stock_values)):
-        #count 26 EMA
         EMA26 = 0
         EMA12 = 0
         for k in range(12, 27, 14):
@@ -55,21 +95,32 @@ def create_macd_signal_plot(stock_values, dates):
     signal = []
     N = 9
     alpha = 2 / (N + 1)
+    stocks = []
     for i in range(len(macd)):
         counter, denominator = count_ema(i, N, alpha, macd)
         signal.append(counter/denominator)
 
-    show_chart(dates, macd, "Date", "MACD values", "MACD-Signal", dates, signal)
+        if i > 1:
+            if macd[i] > signal[i] and macd[i - 1] < signal[i - 1]:
+                stocks.append((dates[i], signal[i], False, i))
+            elif macd[i] < signal[i] and macd[i - 1] > signal[i - 1]:
+                stocks.append((dates[i], signal[i], True, i))
+
+    simulate_buying_stocks(stock_values, stocks)
+    show_charts(dates, stock_values, macd, ["Date", "Date"], ["Values [zł]", "MACD values"],
+               [f"{name}- prices over time", "MACD-Signal"], signal, stocks)
 
 
 def main():
-    wig20 = pd.read_csv('wig20_w.csv')
+    stocks = ['wig20_d.csv', 'wig20_w.csv', 'cmr_d.csv']
+    names = ['wig20 days', 'wig20 weeks', 'comarch days', 'comarch weeks']
+    for stock, name in zip(stocks, names):
+        s = pd.read_csv(stock)
 
-    stock_values = wig20["Otwarcie"]
-    dates = wig20["Data"]
-    show_stock_chart(dates, stock_values, "Date", "Values [zł]", "WIG20- prices over time")
+        stock_values = s["Zamkniecie"]
+        dates = s["Data"]
 
-    create_macd_signal_plot(stock_values, dates)
+        create_macd_signal_plot(stock_values, dates, name)
 
 
 if __name__ == "__main__":
